@@ -4,8 +4,6 @@
 # 3. Downsample (OK)
 # 4. Save to separate files by metric (OK)
 
-# 5. Join by approximate numeric match using fuzzyjoin::difference_left_join()
-library(fuzzyjoin)
 
 library(tidyverse)
 library(fs)
@@ -67,7 +65,5 @@ walk2(downsampled_df$scr_ds, downsampled_df$file, ~write_tsv(x = .x, path = str_
 walk2(downsampled_df$ecg_ds, downsampled_df$file, ~write_tsv(x = .x, path = str_replace(.y, ".txt","_ECG.txt"), na = "", col_names = FALSE))
 
 
-
-map(downsampled_df$scr_ds, ~tail(.x))
 
 
