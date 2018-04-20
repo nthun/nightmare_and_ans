@@ -52,10 +52,10 @@ df <-
 downsampled_df <-
     df %>% 
         mutate(
-            scr_ds = pmap(list(data, file_sampling, time_start), ~downsample(..1, variable = "scr", from = ..2, to = 32) %>%
+            scr_ds = pmap(list(data, file_sampling, time_start), ~downsample(..1, variable = "scr", from = ..2, to = 32L) %>%
                                                                   mutate(time = time + ..3) %>% 
                                                                   drop_na()),
-            ecg_ds = pmap(list(data, file_sampling, time_start), ~downsample(..1, variable = "ecg", from = ..2, to = 1024)%>% 
+            ecg_ds = pmap(list(data, file_sampling, time_start), ~downsample(..1, variable = "ecg", from = ..2, to = 1024L)%>% 
                                                                   mutate(time = time + ..3) %>%
                                                                   drop_na()),
             file = str_replace(file, "_SCR","") %>% 
