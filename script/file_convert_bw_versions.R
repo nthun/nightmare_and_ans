@@ -20,14 +20,15 @@ req_columns = c("ecg" = "Sensor-C:ECG/EKG", "scr" = "Sensor-E:SC/GSR")
 scr_sampling_rate = 32L
 ecg_sampling_rate = 1024L
 
-
 # Read new files
 df <- 
     tibble(file = dir_ls(dir, regexp = pattern)) %>% 
     mutate(name = str_replace(file, str_glue(".*/(\\d+.*){pattern}$"),"\\1")) %>% 
     separate(name, into = c("id","session"), extra = "merge") %>% 
+    mutate(session = str_replace(session, "_time", "") %>% 
+                     str_replace("_SCR", "")) %>% 
     # Read only the nweer files that has all phys data in one file
-    filter(id >= 40 & !str_detect(session, "proba")) %>% 
+    filter(id >= 40 & !str_detect(session, "proba") & id != 54) %>% 
     # Get info from header: absoulte time, file length, and sampling freq
     # The read all files into a nested df and clean those files
     mutate( time_start =    map_int(file,  ~read_lines(.x, skip = 6, n_max = 1) %>% 
@@ -46,23 +47,25 @@ df <-
             )
 
 # Downsampling  --------------------------------------------------------------
+# Do not add the starting time to the time as we now use relative time from the start of recording (in seconds)
 
 downsampled_df <-
     df %>% 
         mutate(
             scr_ds = pmap(list(data, file_sampling, time_start), ~downsample(..1, variable = "scr", from = ..2, to = 32L) %>%
-                                                                  mutate(time = time + ..3) %>% 
+                                                                  # mutate(time = time + ..3) %>% 
                                                                   drop_na()),
             ecg_ds = pmap(list(data, file_sampling, time_start), ~downsample(..1, variable = "ecg", from = ..2, to = 1024L)%>% 
-                                                                  mutate(time = time + ..3) %>%
+                                                                  # mutate(time = time + ..3) %>%
                                                                   drop_na()),
             file = str_replace(file, "_SCR","") %>% 
-                   str_replace(., "all_data/", "all_data/converted/"))
+                   str_replace("_time", "") %>% 
+                   str_replace( "all_data/", "all_data/converted/"))
 
 # Save the files separately to a new library
-walk2(downsampled_df$scr_ds, downsampled_df$file, ~write_tsv(x = .x, path = str_replace(.y, ".txt","_SCR.txt"), na = "", col_names = FALSE))
+walk2(downsampled_df$scr_ds, downsampled_df$file, ~write_csv(x = .x, path = str_replace(.y, ".txt","_SCR.csv"), na = "", col_names = FALSE))
 
-walk2(downsampled_df$ecg_ds, downsampled_df$file, ~write_tsv(x = .x, path = str_replace(.y, ".txt","_ECG.txt"), na = "", col_names = FALSE))
+walk2(downsampled_df$ecg_ds, downsampled_df$file, ~write_csv(x = .x, path = str_replace(.y, ".txt","_ECG.csv"), na = "", col_names = FALSE))
 
 
 

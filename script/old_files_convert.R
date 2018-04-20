@@ -47,7 +47,7 @@ old_ecg <-
 
 # Write the corrected files
 walk2(old_ecg$data, str_replace(old_ecg$file, "all_data", new_dir),
-      ~write_tsv(.x, path = .y, col_names = FALSE))
+      ~write_csv(.x, path = .y, col_names = FALSE))
 
 # Process old SCR data
 pattern = "_SCR.txt"
@@ -80,7 +80,7 @@ old_scr <-
 
 # Write the corrected files
 walk2(old_scr$data, str_replace(old_scr$file, "all_data", new_dir),
-      ~write_tsv(.x, path = .y, col_names = FALSE))
+      ~write_csv(.x, path = .y, col_names = FALSE))
 
 
 
