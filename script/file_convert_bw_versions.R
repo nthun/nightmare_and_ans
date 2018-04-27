@@ -63,9 +63,9 @@ downsampled_df <-
                    str_replace( "all_data/", "all_data/converted/"))
 
 # Save the files separately to a new library
-walk2(downsampled_df$scr_ds, downsampled_df$file, ~write_csv(x = .x, path = str_replace(.y, ".txt","_SCR.csv"), na = "", col_names = FALSE))
+walk2(downsampled_df$scr_ds, downsampled_df$file, ~write_csv(x = .x, path = str_replace(.y, ".txt","_SCR.txt"), na = "", col_names = FALSE))
 
-walk2(downsampled_df$ecg_ds, downsampled_df$file, ~write_csv(x = .x, path = str_replace(.y, ".txt","_ECG.csv"), na = "", col_names = FALSE))
+walk2(downsampled_df$ecg_ds, downsampled_df$file, ~write_csv(x = .x, path = str_replace(.y, ".txt","_ECG.txt"), na = "", col_names = FALSE))
 
 
 
