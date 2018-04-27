@@ -25,12 +25,12 @@ all_scr <-
     mutate( data = map(file, ~read_csv(file = .x, 
                                        col_names = c("time", "scr"), 
                                        col_types = "dd")))
+
 all_scr %>% 
     unnest() %>% 
     select(-file) %>% 
     write_csv("all_data/clean/all_scr.csv")
 
-all_ecg %>% distinct(session)
 
 
 
