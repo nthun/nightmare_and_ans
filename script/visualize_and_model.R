@@ -1,7 +1,3 @@
-# TODO: Old and new sets (according to )
-# TODO? Have to match markers by block
-
-
 # Aggregate SCR data
 # devtools::install_github("thomasp85/patchwork")
 library(tidyverse)
@@ -12,6 +8,8 @@ library(patchwork)
 
 scr_era_dir <- "all_data/scr01/"
 
+
+# Data reading and verification -------------------------------------------
 # Participants data
 participants <-
     readxl::read_excel("all_data/participants/2016_2017_összegzés_25_05_2018.xlsx") %>%
@@ -69,8 +67,7 @@ pic_sets <-
     select(id, stimulus) %>% 
     inner_join(participants %>% select(id, pic_set), by = "id") %>% 
     distinct(stimulus, pic_set) %>% 
-    arrange(pic_set) %>% 
-    print(n = 100)
+    arrange(pic_set)
 
 set_a <- pic_sets %>% filter(pic_set == "A") %>% pull(stimulus)
 set_b <- pic_sets %>% filter(pic_set == "B") %>% pull(stimulus)
@@ -121,19 +118,9 @@ scr_era %>%
     print(n = 100)
 
 
-scr_era %>%
-    group_by(session, block, group, pic_valence) %>% 
-    summarise(Mean = mean(scr_sqrt, na.rm = TRUE),
-              Se = sd(scr_sqrt, na.rm = TRUE)/sqrt(n())) %>% 
-    filter(session == "emot") %>% 
-    ggplot() +
-        aes(x = block, y = Mean) +
-        geom_col() +
-        geom_linerange(aes(ymin = Mean - Se, ymax = Mean + Se)) +
-        geom_smooth(method = "lm", se = FALSE) +
-        facet_grid(group ~ pic_valence)
-
-plot_emot <-
+# Plotting ----------------------------------------------------------------
+# Plotting SCR
+plot_emot_scr <-
     scr_era %>%
     filter(session == "emot") %>% 
     group_by(session, block, group, pic_valence) %>% 
@@ -151,8 +138,8 @@ plot_emot <-
         facet_grid(group ~ session) +
         theme(strip.text.y = element_blank())
 
-plot_recall <-
-scr_era %>%
+plot_recall_scr <-
+    scr_era %>%
     filter(session == "recall") %>% 
     group_by(session, group, pic_valence, novelty) %>% 
     summarise(Mean = mean(scr_sqrt, na.rm = TRUE),
@@ -169,12 +156,96 @@ scr_era %>%
         theme(axis.text.y = element_blank(),
               axis.ticks = element_blank())
 
-plot_emot + 
-    plot_recall +
-    plot_layout(widths = c(3,1))
+plot_emot_scr + 
+    plot_recall_scr +
+    plot_layout(widths = c(3,2))
 
+# Subjective arousal
+plot_emot_arousal <-
+    scr_era %>%
+    filter(session == "emot") %>% 
+    group_by(session, block, group, pic_valence) %>% 
+    summarise(Mean = mean(arousal, na.rm = TRUE),
+              Se = sd(arousal, na.rm = TRUE)/sqrt(n())) %>% 
+    ggplot() +
+        aes(x = block, y = Mean, group = pic_valence, ymin = Mean - Se, ymax = Mean + Se) +
+        geom_point() +
+        geom_errorbar(width = .2) +
+        geom_line(aes(linetype = pic_valence), size = 1) +
+        coord_cartesian(ylim = c(1, 9)) +
+        scale_x_continuous("Block", breaks = 1:3) +
+        scale_y_continuous("Mean (SEM) of subjective arousal") +
+        guides(linetype = "none") +
+        facet_grid(group ~ session) +
+        theme(strip.text.y = element_blank())
+
+plot_recall_arousal <-
+    scr_era %>%
+    filter(session == "recall") %>% 
+    group_by(session, group, pic_valence, novelty) %>% 
+    summarise(Mean = mean(arousal, na.rm = TRUE),
+              Se = sd(arousal, na.rm = TRUE)/sqrt(n())) %>% 
+    ggplot() +
+        aes(x = novelty, y = Mean, group = pic_valence, ymin = Mean - Se, ymax = Mean + Se) +
+        geom_point() +
+        geom_errorbar(width = .2) +
+        geom_line(aes(linetype = pic_valence), size = 1) +
+        coord_cartesian(ylim = c(1, 9)) +
+        scale_x_discrete("Novelty") +
+        scale_y_continuous(NULL) +
+        facet_grid(group ~ session) +
+        theme(axis.text.y = element_blank(),
+              axis.ticks = element_blank())
+
+plot_emot_arousal + 
+    plot_recall_arousal +
+    plot_layout(widths = c(3,2))
     
-# Model building
+
+# Subjective valence
+plot_emot_valence <-
+    scr_era %>%
+    filter(session == "emot") %>% 
+    group_by(session, block, group, pic_valence) %>% 
+    summarise(Mean = mean(valence, na.rm = TRUE),
+              Se = sd(valence, na.rm = TRUE)/sqrt(n())) %>% 
+    ggplot() +
+    aes(x = block, y = Mean, group = pic_valence, ymin = Mean - Se, ymax = Mean + Se) +
+    geom_point() +
+    geom_errorbar(width = .2) +
+    geom_line(aes(linetype = pic_valence), size = 1) +
+    coord_cartesian(ylim = c(1, 9)) +
+    scale_x_continuous("Block", breaks = 1:3) +
+    scale_y_continuous("Mean (SEM) of subjective arousal") +
+    guides(linetype = "none") +
+    facet_grid(group ~ session) +
+    theme(strip.text.y = element_blank())
+
+plot_recall_valence <-
+    scr_era %>%
+    filter(session == "recall") %>% 
+    group_by(session, group, pic_valence, novelty) %>% 
+    summarise(Mean = mean(valence, na.rm = TRUE),
+              Se = sd(valence, na.rm = TRUE)/sqrt(n())) %>% 
+    ggplot() +
+    aes(x = novelty, y = Mean, group = pic_valence, ymin = Mean - Se, ymax = Mean + Se) +
+    geom_point() +
+    geom_errorbar(width = .2) +
+    geom_line(aes(linetype = pic_valence), size = 1) +
+    coord_cartesian(ylim = c(1, 9)) +
+    scale_x_discrete("Novelty") +
+    scale_y_continuous(NULL) +
+    facet_grid(group ~ session) +
+    theme(axis.text.y = element_blank(),
+          axis.ticks = element_blank())
+
+plot_emot_valence + 
+    plot_recall_valence +
+    plot_layout(widths = c(3,2))
+
+
+
+# Model building ----------------------------------------------------------
 scr_sum <-
     scr_era %>% 
     group_by(id, session, block, group, pic_valence) %>% 
@@ -215,17 +286,6 @@ lmer(scr ~ block*group*pic_valence + (1 | id), data = scr_sum) %>% summary()
 # time x group x pic_valence x session
     
 
-# bigfix ------------------------------------------------------------------
+# bugfix area ------------------------------------------------------------------
 
-markers %>% print(n = 80)
 
-read_tsv("all_data/scr01/02_emot_SCR_era.txt") %>% 
-    select(order = Event.Nr, stimulus = Event.NID, scr = CDA.SCR) %>% 
-    mutate(block = case_when(order <= 20 ~ 1L,
-                             order >20 & order <= 40 ~ 2L,
-                             order > 40 ~ 3L)) %>% 
-    select(-order)
-
-library(ggplot2)
-
-gridExtra::grid.arrange(plot_emot, plot_recall)
