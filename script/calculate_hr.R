@@ -27,7 +27,7 @@ calculate_hr <- function(df, time_col, ibi_col, window = 1000L, ...){
                             na.rm = TRUE,
                             ...)) %>%
         # Keep only every full second
-        dplyr::filter(!!sym(time_col) %% 1000 == 0) %>%
+        dplyr::filter(!!sym(time_col) %% window == 0) %>%
         # Keep the time and hr cols only
         dplyr::transmute(time = ibi_time/1000, 
                          hr)
