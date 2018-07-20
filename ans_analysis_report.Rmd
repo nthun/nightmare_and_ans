@@ -1,5 +1,5 @@
 ---
-title: "Autonomic nervous system responses to affective pictures in people with frequent nightmares"
+title: "Subjective and autonomic nervous system responses to affective pictures in people with frequent nightmares"
 output: html_notebook
 ---
 
@@ -19,27 +19,20 @@ library(patchwork)
 # Aims
 
 Theories suggest that people with frequent nightmares may have disturbed emotional processing, however this claim has not been supported by experimental evidence. This research investigates the following claims: 
-People with frequent nightmares ...
-A) ... have a hightened reactivity to disturbing stimuli
-B) ... have a slower habituation to disturbing stimuli
+People with frequent nightmares...  
+A) ...have a hightened reactivity to disturbing stimuli  
+B) ...have a slower habituation to disturbing stimuli
 
 # Methods
-Data was collected from participants with and without frequent nightmares. Participants were exposed to neutral and negative IAPS pictures, while skin conductance and electrocardiogram was recorded. 
+Data was collected from participants with and without frequent nightmares. Participants were exposed to neutral and negative IAPS pictures in three blocks, while skin conductance and electrocardiogram was recorded. Participants had to evaluate arousal and valence of each picture after exposure. Subsequently, participant spent a night at the sleep lab, and participated in a recall session where the original pictures and new pictures were shown.
 
-## Data processing  
-### Skin conductance Response (SCR)  
-- Skin conductance was recorded using a sampling rate of 32 Hz
-- Ledalab toolbox was used to downsample data to 16 Hz, use continuous decomposition analysis with optimized parameters to separate tonic (SCL) and phasinc (SCR) skin conductance. SCR was calculated using a response window of 1 to 4 sec after stimuli presentation, with a minimum amplitude threshold criterion of 0.01 muS. 
-
-### Heart rate deceleration (HDR)
-- ECG data was collected using a sampling rate of 1024 Hz
-- Movement drift was removed from the data using a moving average with a window of 1024 samples
-- Data was down-sampled to 128 Hz
-- IBIs were identified using a global threshold in Artiifact, and corrected manually.
-- (?) Artifacts were identified using the Berntson (?) method, and replaced using cubic spline interpolation
-- Artifact corrected (?) IBIs   were used to estimate heart rate for each half second, using cubic spline interpolation.
-- Heart rate deceleration (HRD) was calculate as the minimum heart rate in a 3s window after presentation for each stimulus, relative to the moment of presentation
-- HRD was averaged for each stimuli type (neutral vs. negative) for each participant, and each block.
+# Data analysis strategy
+- We use linear mixed-effects modeling using the lme4 package
+- The random stucture is determined by the Zuur (2009) method to determine the random and fixed structure
+- Outcome variables are **subjective arousal, valence, skin conductance response (SCR), and heart rate deceleration (HRD)** (see processing details for each outcome measure below)
+- We used **group** (control/nightmare) **block** (1/2/3) **picture** (neutral/negative) variables as fixed effects
+- We start with a full model, and remove effects sequentially that does not contribute to the model
+- Model comparisons are based on BIC: difference that are larger than 2 are considered important.
 
 ```{r data read, echo=FALSE, message=FALSE, warning=FALSE}
 participants <- read_csv("analysis_data/participants.csv")
@@ -61,7 +54,7 @@ set_b <- pic_sets %>% filter(pic_set == "B") %>% pull(stimulus)
 
 ```
 
-
+## Prepare data
 ```{r prepare scr data}
 scr_era <-
     scr_data %>% 
@@ -83,62 +76,55 @@ scr_era <-
     mutate(block = if_else(session == "recall", NA_integer_, block),
            picture = factor(picture, levels = c("Neutral", "Negative"))) 
 
-scr_era %>% 
-    ggplot() +
-        aes(x = scr_sqrt) +
-        geom_histogram()
+# Create a df where data is aggregated for participants by session, block, group, etc.
+df_sum <-
+    scr_era %>% 
+    group_by(id, session, block, group, picture, novelty) %>% 
+    summarise(scr = mean(scr_sqrt, na.rm = TRUE),
+              arousal = mean(arousal, na.rm = TRUE),
+              valence = mean(valence, na.rm = TRUE)) %>% 
+    ungroup()
 
+# This dataset is needed for the model that contains sleeping (or is it?)
+
+sleep_df <-
+    scr_era %>% 
+    filter(session == "emot" & block == 3L |
+               session == "recall" & novelty == "old") %>% 
+    mutate(sleep = case_when(session == "emot" ~ "pre-sleep",
+                             session == "recall" ~ "post-sleep") %>% 
+               factor(., c("pre-sleep", "post-sleep"))) %>% 
+    select(-session, -block, -novelty) %>% 
+    group_by(id, group, picture, sleep) %>% 
+    summarise(scr = mean(scr_sqrt, na.rm = TRUE),
+              arousal = mean(arousal, na.rm = TRUE),
+              valence = mean(valence, na.rm = TRUE)) %>% 
+    ungroup()
+
+sleep_sum <-
+    scr_era %>% 
+    filter(session == "emot" & block == 3L |
+           session == "recall" & novelty == "old") %>% 
+    mutate(sleep = case_when(session == "emot" ~ "pre-sleep",
+                             session == "recall" ~ "post-sleep") %>% 
+               factor(., c("pre-sleep", "post-sleep"))) %>% 
+    select(-session, -block, -novelty) %>% 
+    group_by(group, picture, sleep) %>% 
+    summarise(scr_mean = mean(scr_sqrt, na.rm = TRUE),
+              scr_se = sd(scr_sqrt, na.rm = TRUE)/sqrt(n()),
+              arousal_mean = mean(arousal, na.rm = TRUE),
+              arousal_se = sd(arousal, na.rm = TRUE)/sqrt(n()),
+              valence_mean = mean(valence, na.rm = TRUE),
+              valence_se = sd(valence, na.rm = TRUE)/sqrt(n())) %>% 
+    ungroup()
+
+skimr::skim(df_sum)
 ```
 
-```{r plotting SCR}
-# Plotting SCR
-plot_emot_scr <-
-    scr_era %>%
-    filter(session == "emot") %>% 
-    mutate(session = case_when(session == "emot" ~ "Emotion induction",
-                               session == "recall" ~ "Recall")) %>% 
-    group_by(session, block, group, picture) %>% 
-    summarise(Mean = mean(scr_sqrt, na.rm = TRUE),
-              Se = sd(scr_sqrt, na.rm = TRUE)/sqrt(n())) %>% 
-    ggplot() +
-        aes(x = block, y = Mean, group = picture, ymin = Mean - Se, ymax = Mean + Se) +
-        geom_point() +
-        geom_errorbar(width = .2) +
-        geom_line(aes(linetype = picture), size = 1) +
-        coord_cartesian(ylim = c(-0.4, .75)) +
-        scale_x_continuous("Block", breaks = 1:3) +
-        scale_y_continuous("Mean (SEM) of skin counductance response") +
-        guides(linetype = "none") +
-        facet_grid(group ~ session) +
-        theme(strip.text.y = element_blank())
+# Subjective arousal
 
-plot_recall_scr <-
-    scr_era %>%
-    filter(session == "recall") %>% 
-    mutate(session = case_when(session == "emot" ~ "Emotion induction",
-                               session == "recall" ~ "Recall")) %>% 
-    group_by(session, group, picture, novelty) %>% 
-    summarise(Mean = mean(scr_sqrt, na.rm = TRUE),
-           Se = sd(scr_sqrt, na.rm = TRUE)/sqrt(n())) %>% 
-    ggplot() +
-        aes(x = novelty, y = Mean, group = picture, ymin = Mean - Se, ymax = Mean + Se) +
-        geom_point() +
-        geom_errorbar(width = .2) +
-        geom_line(aes(linetype = picture), size = 1) +
-        coord_cartesian(ylim = c(-0.4, .75)) +
-        scale_x_discrete("Novelty") +
-        scale_y_continuous(NULL) +
-        facet_grid(group ~ session) +
-        theme(axis.text.y = element_blank(),
-              axis.ticks = element_blank())
-
-plot_emot_scr + 
-    plot_recall_scr +
-    plot_layout(widths = c(3,2))
-
-```
-
-```{r plot subjective arousal}
+Participants had to rate each picture on an arousal/valence scale. These values were aggregated by picture type and block.
+```{r plot subjective arousal, echo=FALSE}
 # Subjective arousal
 plot_emot_arousal <-
     scr_era %>%
@@ -187,7 +173,35 @@ plot_emot_arousal +
 
 ```
 
-```{r plot subjective valence}
+```{r modeling arousal}
+arousal_lm <- lm(arousal ~ group * block * picture, data = scr_era)
+arousal_i <- lmer(arousal ~ group * block * picture + (1 | id), data = scr_era)
+arousal_is <- lmer(arousal ~ group * block * picture + (block : group : picture | id), data = scr_era)
+
+# Remove 3 way interaction
+arousal_best <- arousal_i
+# Note that we use the random intercept model, however the random intercept+slope model may have a better fit (although it fails to converge properly). The optimal random structure is yet to be found.
+arousal_3 <- update(arousal_best, . ~ . - group : block : picture)
+
+arousal_best <- arousal_3
+
+# Remove 2-way interactions
+arousal_2_1 <- update(arousal_best, . ~ . - group : block) # Drop
+arousal_2_2 <- update(arousal_best, . ~ . - group : picture) # Drop
+arousal_2_3 <- update(arousal_best, . ~ . - block : picture) # Drop
+
+arousal_best <- update(arousal_best, . ~ . - group:block - group:picture - block:picture)
+
+# We keep all main effects
+summary(arousal_best)
+```
+
+There is a clear and strong effect of the picture type as negative pictures are associated with a higher subjective arousal. There is a weak block effect, that shows that arousal evaluations are slightly decreasing over time.
+
+# Subjective valence
+
+Participants had to rate each picture on an arousal/valence scale. These values were aggregated by picture type and block.
+```{r plot subjective valence, echo=FALSE}
 # Subjective valence
 plot_emot_valence <-
     scr_era %>%
@@ -198,16 +212,16 @@ plot_emot_valence <-
     summarise(Mean = mean(valence, na.rm = TRUE),
               Se = sd(valence, na.rm = TRUE)/sqrt(n())) %>% 
     ggplot() +
-    aes(x = block, y = Mean, group = picture, ymin = Mean - Se, ymax = Mean + Se) +
-    geom_point() +
-    geom_errorbar(width = .2) +
-    geom_line(aes(linetype = picture), size = 1) +
-    coord_cartesian(ylim = c(1, 9)) +
-    scale_x_continuous("Block", breaks = 1:3) +
-    scale_y_continuous("Mean (SEM) of subjective valence") +
-    guides(linetype = "none") +
-    facet_grid(group ~ session) +
-    theme(strip.text.y = element_blank())
+        aes(x = block, y = Mean, group = picture, ymin = Mean - Se, ymax = Mean + Se) +
+        geom_point() +
+        geom_errorbar(width = .2) +
+        geom_line(aes(linetype = picture), size = 1) +
+        coord_cartesian(ylim = c(1, 9)) +
+        scale_x_continuous("Block", breaks = 1:3) +
+        scale_y_continuous("Mean (SEM) of subjective valence") +
+        guides(linetype = "none") +
+        facet_grid(group ~ session) +
+        theme(strip.text.y = element_blank())
 
 plot_recall_valence <-
     scr_era %>%
@@ -218,41 +232,101 @@ plot_recall_valence <-
     summarise(Mean = mean(valence, na.rm = TRUE),
               Se = sd(valence, na.rm = TRUE)/sqrt(n())) %>% 
     ggplot() +
-    aes(x = novelty, y = Mean, group = picture, ymin = Mean - Se, ymax = Mean + Se) +
-    geom_point() +
-    geom_errorbar(width = .2) +
-    geom_line(aes(linetype = picture), size = 1) +
-    coord_cartesian(ylim = c(1, 9)) +
-    scale_x_discrete("Novelty") +
-    scale_y_continuous(NULL) +
-    facet_grid(group ~ session) +
-    theme(axis.text.y = element_blank(),
-          axis.ticks = element_blank()) +
-    labs(linetype = "Picture")
+        aes(x = novelty, y = Mean, group = picture, ymin = Mean - Se, ymax = Mean + Se) +
+        geom_point() +
+        geom_errorbar(width = .2) +
+        geom_line(aes(linetype = picture), size = 1) +
+        coord_cartesian(ylim = c(1, 9)) +
+        scale_x_discrete("Novelty") +
+        scale_y_continuous(NULL) +
+        facet_grid(group ~ session) +
+        theme(axis.text.y = element_blank(),
+              axis.ticks = element_blank()) +
+        labs(linetype = "Picture")
 
 plot_emot_valence + 
     plot_recall_valence +
     plot_layout(widths = c(3,2))
 
 ```
+```{r modeling valence}
+valence_lm <- lm(valence ~ group * block * picture, data = scr_era)
+valence_i <- lmer(valence ~ group * block * picture + (1 | id), data = scr_era)
+valence_is <- lmer(valence ~ group * block * picture + (block : group : picture | id), data = scr_era)
 
-# Model building
-```{r}
-# Create a df where data is aggregated for participants by session, block, group, etc.
-df_sum <-
-    scr_era %>% 
-    group_by(id, session, block, group, picture, novelty) %>% 
-    summarise(scr = mean(scr_sqrt, na.rm = TRUE),
-              arousal = mean(arousal, na.rm = TRUE),
-              valence = mean(valence, na.rm = TRUE)) %>% 
-    ungroup()
+# Remove 3 way interaction
+valence_best <- valence_i
+# Note that we use the random intercept model, however the random intercept+slope model may have a better fit (although it fails to converge properly). The optimal random structure is yet to be found.
+valence_3 <- update(valence_best, . ~ . - group : block : picture)
+
+valence_best <- valence_3
+
+# Remove 2-way interactions
+valence_2_1 <- update(valence_best, . ~ . - group : block) # Drop
+valence_2_2 <- update(valence_best, . ~ . - group : picture) # Drop
+valence_2_3 <- update(valence_best, . ~ . - block : picture) # Keep
+
+valence_best <- update(valence_best, . ~ . - group:block - group:picture)
+
+# We keep all main effects
+summary(valence_best)
+```
+
+# Skin Conductance Response (SCR)
+## Data processing
+- Skin conductance was recorded using a sampling rate of 32 Hz
+- Ledalab toolbox was used to downsample data to 16 Hz, use continuous decomposition analysis with optimized parameters to separate tonic (SCL) and phasinc (SCR) skin conductance. SCR was calculated using a response window of 1 to 4 sec after stimuli presentation, with a minimum amplitude threshold criterion of 0.01 muS. 
+
+```{r plotting SCR, echo=FALSE}
+# Plotting SCR
+plot_emot_scr <-
+    scr_era %>%
+    filter(session == "emot") %>% 
+    mutate(session = case_when(session == "emot" ~ "Emotion induction",
+                               session == "recall" ~ "Recall")) %>% 
+    group_by(session, block, group, picture) %>% 
+    summarise(Mean = mean(scr_sqrt, na.rm = TRUE),
+              Se = sd(scr_sqrt, na.rm = TRUE)/sqrt(n())) %>% 
+    ggplot() +
+        aes(x = block, y = Mean, group = picture, ymin = Mean - Se, ymax = Mean + Se) +
+        geom_point() +
+        geom_errorbar(width = .2) +
+        geom_line(aes(linetype = picture), size = 1) +
+        coord_cartesian(ylim = c(-0.4, .75)) +
+        scale_x_continuous("Block", breaks = 1:3) +
+        scale_y_continuous("Mean (SEM) of skin counductance response") +
+        guides(linetype = "none") +
+        facet_grid(group ~ session) +
+        theme(strip.text.y = element_blank())
+
+plot_recall_scr <-
+    scr_era %>%
+    filter(session == "recall") %>% 
+    mutate(session = case_when(session == "emot" ~ "Emotion induction",
+                               session == "recall" ~ "Recall")) %>% 
+    group_by(session, group, picture, novelty) %>% 
+    summarise(Mean = mean(scr_sqrt, na.rm = TRUE),
+           Se = sd(scr_sqrt, na.rm = TRUE)/sqrt(n())) %>% 
+    ggplot() +
+        aes(x = novelty, y = Mean, group = picture, ymin = Mean - Se, ymax = Mean + Se) +
+        geom_point() +
+        geom_errorbar(width = .2) +
+        geom_line(aes(linetype = picture), size = 1) +
+        coord_cartesian(ylim = c(-0.4, .75)) +
+        scale_x_discrete("Novelty") +
+        scale_y_continuous(NULL) +
+        facet_grid(group ~ session) +
+        theme(axis.text.y = element_blank(),
+              axis.ticks = element_blank())
+
+plot_emot_scr + 
+    plot_recall_scr +
+    plot_layout(widths = c(3,2))
 
 ```
 
+```{r scr model building}
 # Using Zuur method to select random structure
-I've used the BIC value (>2) to decide which model had the best fit.
-
-```{r model building}
 # Simple linear regression to justify lmer
 model_lm <- lm(scr ~ group * block * picture, data = df_sum)
 # Random intercept
@@ -295,56 +369,17 @@ model_1_3 <- update(model_best, . ~ . - picture)
 # anova(model_best, model_1_3) # Keep
 
 model_best <- update(model_best, . ~ . - group)
-```
 
-## Findings
-- There was no main or interaction effect of nightmare group membership on SCR 
-- SCR decreased in each subsequet block
-- Negative pictures were associated with larger SCR
-
-### Final model
-```{r final model}
 summary(model_best)
 ```
 
+- There was no main or interaction effect of nightmare group membership on SCR 
+- SCR decreased in each subsequet block, showing signs of habituation
+- Negative pictures were associated with larger SCR
 
-# Habituation before and after sleep
-Finding: Ther was no evidence for 
+## SCR habituation before and after sleep
+
 ```{r}
-sleep_df <-
-    scr_era %>% 
-    filter(session == "emot" & block == 3L |
-               session == "recall" & novelty == "old") %>% 
-    mutate(sleep = case_when(session == "emot" ~ "pre-sleep",
-                             session == "recall" ~ "post-sleep") %>% 
-               factor(., c("pre-sleep", "post-sleep"))) %>% 
-    select(-session, -block, -novelty) %>% 
-    group_by(id, group, picture, sleep) %>% 
-    summarise(scr = mean(scr_sqrt, na.rm = TRUE),
-              arousal = mean(arousal, na.rm = TRUE),
-              valence = mean(valence, na.rm = TRUE)) %>% 
-    ungroup()
-
-lmer(scr ~ group : picture : sleep + (1 | id), data = sleep_df) %>% 
-    summary()
-
-sleep_sum <-
-    scr_era %>% 
-    filter(session == "emot" & block == 3L |
-               session == "recall" & novelty == "old") %>% 
-    mutate(sleep = case_when(session == "emot" ~ "pre-sleep",
-                             session == "recall" ~ "post-sleep") %>% 
-               factor(., c("pre-sleep", "post-sleep"))) %>% 
-    select(-session, -block, -novelty) %>% 
-    group_by(group, picture, sleep) %>% 
-    summarise(scr_mean = mean(scr_sqrt, na.rm = TRUE),
-              scr_se = sd(scr_sqrt, na.rm = TRUE)/sqrt(n()),
-              arousal_mean = mean(arousal, na.rm = TRUE),
-              arousal_se = sd(arousal, na.rm = TRUE)/sqrt(n()),
-              valence_mean = mean(valence, na.rm = TRUE),
-              valence_se = sd(valence, na.rm = TRUE)/sqrt(n())) %>% 
-    ungroup()
-
 sleep_sum %>% 
     ggplot() +
     aes(x = sleep, y = scr_mean, ymin = scr_mean - scr_se, ymax = scr_mean + scr_se, group = picture) +
@@ -353,10 +388,26 @@ sleep_sum %>%
     geom_errorbar(width = .2) +
     facet_grid(group ~ .)
 
+lmer(scr ~ group * picture * sleep + (1 | id), data = sleep_df) %>% 
+    summary()
+
+
 ```
 
-# HDR analysis coming soon
-```{r}
+Finding: Ther was no evidence for a difference in SCR before and after sleep.
+
+# Heart rate deceleration (HDR)
+## Data processing
+- ECG data was collected using a sampling rate of 1024 Hz
+- Movement drift was removed from the data using a moving average with a window of 1024 samples
+- Data was down-sampled to 128 Hz
+- IBIs were identified using a global threshold in Artiifact, and corrected manually.
+- Artifacts were identified using the Berntson method, and replaced using cubic spline interpolation
+- Artifact corrected IBIs   were used to estimate heart rate for each half second, using cubic spline interpolation.
+- Heart rate deceleration (HRD) was calculate as the minimum heart rate in a 3s window after presentation for each stimulus, relative to the moment of presentation
+- HRD was averaged for each stimuli type (neutral vs. negative) for each participant, and each block.
+
+```{r hrd visualization}
 ```
 
 
