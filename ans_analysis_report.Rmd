@@ -20,15 +20,15 @@ library(patchwork)
 
 Theories suggest that people with frequent nightmares may have disturbed emotional processing, however this claim has not been supported by experimental evidence. This research investigates the following claims: 
 People with frequent nightmares...  
-A) ...have a hightened reactivity to disturbing stimuli  
+A) ...have a heightened reactivity to disturbing stimuli  
 B) ...have a slower habituation to disturbing stimuli
 
 # Methods
-Data was collected from participants with and without frequent nightmares. Participants were exposed to neutral and negative IAPS pictures in three blocks, while skin conductance and electrocardiogram was recorded. Participants had to evaluate arousal and valence of each picture after exposure. Subsequently, participant spent a night at the sleep lab, and participated in a recall session where the original pictures and new pictures were shown.
+Data was collected from participants with and without frequent nightmares. After a first accommodating night, participants were exposed to neutral and negative IAPS pictures in three blocks, while skin conductance and electrocardiogram was recorded. Arousal and valence of the pictures were evaluated after exposure. Subsequently, participant spent a night at the sleep lab, and took part in a recall session in the morning when where new pictures were shown along with the original ones.
 
 # Data analysis strategy
 - We use linear mixed-effects modeling using the lme4 package
-- The random stucture is determined by the Zuur (2009) method to determine the random and fixed structure
+- The random structure is determined by the Zuur (2009) method to determine the random and fixed structure
 - Outcome variables are **subjective arousal, valence, skin conductance response (SCR), and heart rate deceleration (HRD)** (see processing details for each outcome measure below)
 - We used **group** (control/nightmare) **block** (1/2/3) **picture** (neutral/negative) variables as fixed effects
 - We start with a full model, and remove effects sequentially that does not contribute to the model
@@ -123,7 +123,6 @@ skimr::skim(df_sum)
 
 # Subjective arousal
 
-Participants had to rate each picture on an arousal/valence scale. These values were aggregated by picture type and block.
 ```{r plot subjective arousal, echo=FALSE}
 # Subjective arousal
 plot_emot_arousal <-
@@ -196,11 +195,11 @@ arousal_best <- update(arousal_best, . ~ . - group:block - group:picture - block
 summary(arousal_best)
 ```
 
-There is a clear and strong effect of the picture type as negative pictures are associated with a higher subjective arousal. There is a weak block effect, that shows that arousal evaluations are slightly decreasing over time.
+- There is a clear and strong effect of the picture type as negative pictures are associated with a higher subjective arousal compared to the neutral pictures. 
+- There is a weak block effect, that shows that arousal evaluations are slightly decreasing over time.
 
 # Subjective valence
 
-Participants had to rate each picture on an arousal/valence scale. These values were aggregated by picture type and block.
 ```{r plot subjective valence, echo=FALSE}
 # Subjective valence
 plot_emot_valence <-
@@ -272,10 +271,14 @@ valence_best <- update(valence_best, . ~ . - group:block - group:picture)
 summary(valence_best)
 ```
 
+- There is a clear and strong effect of the picture type as negative pictures are associated with a lower subjective valence compared to the neutral pictures. 
+- There is a weak interaction between block and picture type, that shows that there can be a difference between the habituation of negative and neutral pictures.
+- There is a weak block effect, that shows that valence evaluations are slightly decreasing over time.
+
 # Skin Conductance Response (SCR)
 ## Data processing
 - Skin conductance was recorded using a sampling rate of 32 Hz
-- Ledalab toolbox was used to downsample data to 16 Hz, use continuous decomposition analysis with optimized parameters to separate tonic (SCL) and phasinc (SCR) skin conductance. SCR was calculated using a response window of 1 to 4 sec after stimuli presentation, with a minimum amplitude threshold criterion of 0.01 muS. 
+- Ledalab toolbox was used to down-sample data to 16 Hz, use continuous decomposition analysis with optimized parameters to separate tonic (SCL) and phasic (SCR) skin conductance. SCR was calculated using a response window of 1 to 4 sec after stimuli presentation, with a minimum amplitude threshold criterion of 0.01 muS. 
 
 ```{r plotting SCR, echo=FALSE}
 # Plotting SCR
@@ -374,7 +377,7 @@ summary(model_best)
 ```
 
 - There was no main or interaction effect of nightmare group membership on SCR 
-- SCR decreased in each subsequet block, showing signs of habituation
+- SCR decreased in each subsequent block, showing signs of habituation
 - Negative pictures were associated with larger SCR
 
 ## SCR habituation before and after sleep
@@ -394,7 +397,7 @@ lmer(scr ~ group * picture * sleep + (1 | id), data = sleep_df) %>%
 
 ```
 
-Finding: Ther was no evidence for a difference in SCR before and after sleep.
+Finding: There was no evidence for a difference in SCR before and after sleep.
 
 # Heart rate deceleration (HDR)
 ## Data processing
