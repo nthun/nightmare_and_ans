@@ -1,6 +1,8 @@
 ---
 title: "Subjective and autonomic nervous system responses to affective pictures in people with frequent nightmares"
-output: html_notebook
+output:
+  html_notebook:
+    toc: true
 ---
 
 ```{r setup, include=FALSE}
@@ -35,26 +37,24 @@ Data was collected from participants with and without frequent nightmares. After
 - Model comparisons are based on BIC: difference that are larger than 2 are considered important.
 
 ```{r data read, echo=FALSE, message=FALSE, warning=FALSE}
+# Participant data
 participants <- read_csv("analysis_data/participants.csv")
-markers_wo_time <- 
-    read_csv("analysis_data/markers.csv") %>% 
-    # Drop training pictures
-    drop_na(block)
-                    
-markers <- 
-    read_csv("all_data/marker/all_triggers.csv", col_types = "cidiiiiiic") %>%
-    mutate(id = if_else(str_length(id) == 1, paste0("0",id), id),
-           picture = if_else(category == 1, 
-                             "Negative", 
-                             "Neutral", 
-                             missing = NA_character_) %>% 
-                     as_factor(levels = c("Neutral", "Negative"))) %>% 
-    # Drop training pictures
-    drop_na(block) %>% 
-    select(-category)
 
-scr_data <- read_csv("analysis_data/scr_era.csv")
-hr_data <- read_csv("all_data/hr/hr_linear.csv")
+# Marker data
+markers <- 
+    read_csv("analysis_data/markers.csv") %>% 
+    # Remove test pictures
+    filter((session == "emot" & order >= 4 & order <= 63) |
+            session == "recall" & order >= 4 & order <= 43) %>% 
+    # Set factor levels for picture
+    mutate(picture = as_factor(picture, levels = c("Neutral", "Negative")))
+    
+markers_wo_time <- select(markers, -time)
+
+# Physiological data
+hr_data <- read_csv("all_data/hr/hr_linear.csv") # This "raw" HR data
+scr_data <- read_csv("analysis_data/scr_data.csv")
+hrd_data <- read_csv("analysis_data/hrd_data.csv")
 
 # Extraction picture sets from marker data
 pic_sets <- 
@@ -71,71 +71,62 @@ set_b <- pic_sets %>% filter(pic_set == "B") %>% pull(stimulus)
 
 ```
 
-## Participant info
+## Participant info (TBA)
 - Table about the average age, gender by group
 - Differences between groups in gender, age, and psych scales
 - Put subjective, scr, hrd data into one dataset (?)
 
 ## Prepare data
 ```{r prepare scr data}
-scr_era <-
-    scr_data %>% 
-    inner_join(participants, by = "id") %>% 
+all_data <-
+    participants %>% 
+    left_join(scr_data, by = "id") %>% 
+    left_join(hrd_data, by = c("id", "session", "block", "stimulus")) %>% 
     left_join(markers_wo_time, by = c("id", "session", "stimulus", "block")) %>% 
-    group_by(id) %>% 
-    # Standardize values, sqrt + standardize values
-    mutate(scr_std = scale(scr),
-           scr_sqrt = sqrt(scr) %>% scale()) %>% 
-    ungroup() %>% 
     # Remove outliers larger that 3.5 sds
-    filter(abs(scr_std) < 3.5) %>% 
-    # Add whether a picture in the recall session is New or not
+    # filter(abs(scr_std) < 3.5 & abs(hrd_std) < 3.5) %>% 
+    # Add whether a picture in the recall session is New or Old, a block is Pre-sleep or Post-sleep, and set factor levels
     mutate(novelty = case_when(
                session == "recall" & pic_set == "A" & stimulus %in% set_a ~ "Old",
                session == "recall" & pic_set == "A" & !(stimulus %in% set_a) ~ "New",
                session == "recall" & pic_set == "B" & stimulus %in% set_b ~ "Old",
                session == "recall" & pic_set == "B" & !(stimulus %in% set_b) ~ "New",
                TRUE ~ NA_character_) %>% 
-               factor(., levels = c("Old", "New"))) %>% 
-    mutate(block = if_else(session == "recall", NA_integer_, block),
-           picture = factor(picture, levels = c("Neutral", "Negative"))) 
+                   factor(., levels = c("Old", "New")),
+            sleep = case_when(
+                block == 3 ~ "Pre-sleep",
+                session == "recall" & novelty == "Old" ~ "Post-sleep",
+                TRUE ~ NA_character_) %>% 
+                   factor(levels = c("Pre-sleep", "Post-sleep")),
+            block = if_else(session == "recall", NA_integer_, block),
+            picture = factor(picture, levels = c("Neutral", "Negative"))
+    )
 
 # Create a df where data is aggregated for participants by session, block, group, etc.
 df_sum <-
-    scr_era %>% 
-    group_by(id, session, block, group, picture, novelty) %>% 
+    all_data %>% 
+    group_by(id, session, block, group, picture, novelty, sleep) %>% 
     summarise(scr = mean(scr_sqrt, na.rm = TRUE),
+              hrd = mean(hrd_sqrt, na.rm = TRUE),
               arousal = mean(arousal, na.rm = TRUE),
               valence = mean(valence, na.rm = TRUE)) %>% 
     ungroup()
 
-# This dataset is needed for the model that contains sleeping (or is it?)
-
+# This dataset is needed for the model that contains sleeping
 sleep_df <-
-    scr_era %>% 
-    filter(session == "emot" & block == 3L |
-               session == "recall" & novelty == "Old") %>% 
-    mutate(sleep = case_when(session == "emot" ~ "Pre-sleep",
-                             session == "recall" ~ "Post-sleep") %>% 
-               factor(., c("Pre-sleep", "Post-sleep"))) %>% 
-    select(-session, -block, -novelty) %>% 
-    group_by(id, group, picture, sleep) %>% 
-    summarise(scr = mean(scr_sqrt, na.rm = TRUE),
-              arousal = mean(arousal, na.rm = TRUE),
-              valence = mean(valence, na.rm = TRUE)) %>% 
-    ungroup()
+    df_sum %>% 
+    drop_na(sleep) %>% 
+    select(-session, -block, -novelty)
 
-sleep_sum <-
-    scr_era %>% 
-    filter(session == "emot" & block == 3L |
-           session == "recall" & novelty == "Old") %>% 
-    mutate(sleep = case_when(session == "emot" ~ "Pre-sleep",
-                             session == "recall" ~ "Post-sleep") %>% 
-               factor(., c("Pre-sleep", "Post-sleep"))) %>% 
-    select(-session, -block, -novelty) %>% 
+# Dataset for plotting the sleep data
+sleep_plot_df <-
+    all_data %>% 
+    drop_na(sleep) %>% 
     group_by(group, picture, sleep) %>% 
     summarise(scr_mean = mean(scr_sqrt, na.rm = TRUE),
               scr_se = sd(scr_sqrt, na.rm = TRUE)/sqrt(n()),
+              hrd_mean = mean(hrd_sqrt, na.rm = TRUE),
+              hrd_se = sd(hrd_sqrt, na.rm = TRUE)/sqrt(n()),
               arousal_mean = mean(arousal, na.rm = TRUE),
               arousal_se = sd(arousal, na.rm = TRUE)/sqrt(n()),
               valence_mean = mean(valence, na.rm = TRUE),
@@ -150,7 +141,7 @@ skimr::skim(df_sum)
 ```{r plot subjective arousal, echo=FALSE}
 # Subjective arousal
 plot_emot_arousal <-
-    scr_era %>%
+    all_data %>%
     filter(session == "emot") %>% 
     mutate(session = case_when(session == "emot" ~ "Emotion induction",
                                session == "recall" ~ "Recall")) %>% 
@@ -170,7 +161,7 @@ plot_emot_arousal <-
         theme(strip.text.y = element_blank())
 
 plot_recall_arousal <-
-    scr_era %>%
+    all_data %>%
     filter(session == "recall") %>% 
     mutate(session = case_when(session == "emot" ~ "Emotion induction",
                                session == "recall" ~ "Recall")) %>% 
@@ -196,10 +187,11 @@ plot_emot_arousal +
 
 ```
 
+## Emotion habituation model (arousal)
 ```{r modeling arousal}
-arousal_lm <- lm(arousal ~ group * block * picture, data = scr_era)
-arousal_i <- lmer(arousal ~ group * block * picture + (1 | id), data = scr_era)
-arousal_is <- lmer(arousal ~ group * block * picture + (block : group : picture | id), data = scr_era)
+arousal_lm <- lm(arousal ~ group * block * picture, data = df_sum)
+arousal_i <- lmer(arousal ~ group * block * picture + (1 | id), data = df_sum)
+arousal_is <- lmer(arousal ~ group * block * picture + (group : picture | id), data = df_sum)
 
 # Remove 3 way interaction
 arousal_best <- arousal_i
@@ -220,14 +212,27 @@ summary(arousal_best)
 ```
 
 - There is a clear and strong effect of the picture type as negative pictures are associated with a higher subjective arousal compared to the neutral pictures. 
-- There is a weak block effect, that shows that arousal evaluations are slightly decreasing over time.
+
+## Sleep habituation model (arousal)
+```{r arousal sleep habituation}
+sleep_plot_df %>% 
+    ggplot() +
+    aes(x = sleep, y = arousal_mean, ymin = arousal_mean - arousal_se, ymax = arousal_mean + arousal_se, group = picture) +
+    geom_point() +
+    geom_line(aes(linetype = picture), size = 1.2) +
+    geom_errorbar(width = .2) +
+    facet_grid(group ~ .)
+
+lmer(arousal ~ group * picture * sleep + (1 | id), data = sleep_df) %>% 
+    summary()
+```
 
 # Subjective valence
 
 ```{r plot subjective valence, echo=FALSE}
 # Subjective valence
 plot_emot_valence <-
-    scr_era %>%
+    all_data %>%
     filter(session == "emot") %>% 
     mutate(session = case_when(session == "emot" ~ "Emotion induction",
                                session == "recall" ~ "Recall")) %>% 
@@ -247,7 +252,7 @@ plot_emot_valence <-
         theme(strip.text.y = element_blank())
 
 plot_recall_valence <-
-    scr_era %>%
+    all_data %>%
     filter(session == "recall") %>% 
     mutate(session = case_when(session == "emot" ~ "Emotion induction",
                                    session == "recall" ~ "Recall")) %>% 
@@ -272,10 +277,11 @@ plot_emot_valence +
     plot_layout(widths = c(3,2))
 
 ```
+## Emotion habituation model (valence)
 ```{r modeling valence}
-valence_lm <- lm(valence ~ group * block * picture, data = scr_era)
-valence_i <- lmer(valence ~ group * block * picture + (1 | id), data = scr_era)
-valence_is <- lmer(valence ~ group * block * picture + (block : group : picture | id), data = scr_era)
+valence_lm <- lm(valence ~ group * block * picture, data = df_sum)
+valence_i <- lmer(valence ~ group * block * picture + (1 | id), data = df_sum)
+valence_is <- lmer(valence ~ group * block * picture + (block : picture | id), data = df_sum)
 
 # Remove 3 way interaction
 valence_best <- valence_i
@@ -296,20 +302,34 @@ summary(valence_best)
 ```
 
 - There is a clear and strong effect of the picture type as negative pictures are associated with a lower subjective valence compared to the neutral pictures. 
-- There is a weak interaction between block and picture type, that shows that there can be a difference between the habituation of negative and neutral pictures.
-- There is a weak block effect, that shows that valence evaluations are slightly decreasing over time.
+## Sleep habituation model (valence)
+```{r valence sleep habituation}
+sleep_plot_df %>% 
+    ggplot() +
+    aes(x = sleep, y = valence_mean, ymin = valence_mean - valence_se, ymax = valence_mean + valence_se, group = picture) +
+    geom_point() +
+    geom_line(aes(linetype = picture), size = 1.2) +
+    geom_errorbar(width = .2) +
+    facet_grid(group ~ .)
+
+lmer(valence ~ group * picture * sleep + (1 | id), data = sleep_df) %>% 
+    summary()
+```
 
 # Skin Conductance Response (SCR)
 ## Data processing
 - Skin conductance was recorded using a sampling rate of 32 Hz
 - Ledalab toolbox was used to down-sample data to 16 Hz, use continuous decomposition analysis with optimized parameters to separate tonic (SCL) and phasic (SCR) skin conductance. SCR was calculated using a response window of 1 to 4 sec after stimuli presentation, with a minimum amplitude threshOld criterion of 0.01 muS. 
+- SCR was square root transformed and scaled for each participant
 
 ## Exploratory data analysis on data quality
 ### Number of markers/participants in the data analysis
-It seems like all scr data can be matched to markers.
+Most data can be matched to markers. However ...
+- all recordings are missing for 41, 43, and 54.
 
 ```{r scr markers}
-scr_data %>% 
+participants %>% 
+    left_join(scr_data, by = "id") %>% 
     arrange(id, session) %>% 
     mutate(id = as_factor(id), 
            session = as_factor(session)) %>% 
@@ -324,15 +344,15 @@ scr_data %>%
     geom_text() +
     coord_flip() +
     labs(title = "Successfully matched markers for each session",
-         y = "Number of matched markers",
+         y = "Number of matched markers (1 means no match)", 
          x = "Participant id")
 ```
 
-## Hypothesis testing
+## Emotion habituation model (SCR)
 ```{r plotting SCR, echo=FALSE}
 # Plotting SCR
 plot_emot_scr <-
-    scr_era %>%
+    all_data %>%
     filter(session == "emot") %>% 
     mutate(session = case_when(session == "emot" ~ "Emotion induction",
                                session == "recall" ~ "Recall")) %>% 
@@ -352,7 +372,7 @@ plot_emot_scr <-
         theme(strip.text.y = element_blank())
 
 plot_recall_scr <-
-    scr_era %>%
+    all_data %>%
     filter(session == "recall") %>% 
     mutate(session = case_when(session == "emot" ~ "Emotion induction",
                                session == "recall" ~ "Recall")) %>% 
@@ -384,7 +404,7 @@ model_lm <- lm(scr ~ group * block * picture, data = df_sum)
 # Random intercept
 model_i <- lmer(scr ~ group * block * picture + (1 | id), data = df_sum)
 # Random intercept and splope
-model_is <- lmer(scr ~ group * block * picture + (block : group : picture | id), data = df_sum)
+model_is <- lmer(scr ~ group * block * picture + (block : picture | id), data = df_sum)
 
 # anova(model_i, model_lm)
 # anova(model_i, model_is)
@@ -429,10 +449,10 @@ summary(model_best)
 - SCR decreased in each subsequent block, showing signs of habituation
 - Negative pictures were associated with larger SCR
 
-## SCR habituation before and after sleep
+## Sleep habituation model (SCR)
 
-```{r}
-sleep_sum %>% 
+```{r scr sleep habituation}
+sleep_plot_df %>% 
     ggplot() +
     aes(x = sleep, y = scr_mean, ymin = scr_mean - scr_se, ymax = scr_mean + scr_se, group = picture) +
     geom_point() +
@@ -457,6 +477,7 @@ Finding: There was no evidence for a difference in SCR before and after sleep.
 - Artifacts were identified using the Berntson method, and replaced using cubic spline interpolation
 - Artifact corrected IBIs were used to estimate heart rate for each half second, using linear interpolation.
 - Heart rate deceleration (HRD) was calculated as the minimum heart rate in a 3s window after presentation for each stimulus, relative to the moment of presentation
+- HRD was negated, square root transformed and scaled for each participant
 - HRD was averaged for each stimuli type (neutral vs. negative) for each participant, and each block.
 
 ## Exploratory data analysis on data quality
@@ -494,20 +515,14 @@ ibi %>%
 ```
 
 ### Number of markers/participants in the data analysis
-It seems like most data can be matched to markers. However participant 47 has only 6 successfully matched markers in the emot session.
-Moreover, the complete session of emot is missing for 04, 42; and recall is missing for 33, 34.
+Most data can be matched to markers. However ...
+- all recordings are missing for 26, 41, 43 and 54.
+- the complete session of emot is missing for 04, 42; and recall is missing for 33, 34.
+- participant 47 has only 6 successfully matched markers in the emot session.
+
 ```{r}
-
-# Nudge data points to the closest half second. This decreases marker accuracy somewhat (from perfect accuracy, they become quarter-of-a-second accurate, which should be enough if we consider that HRD is calculated in a 3 second window)
-markers_hrd <- 
-    markers %>% 
-    mutate(time = plyr::round_any(time,.5)) %>% 
-    drop_na(block) %>%
-    arrange(id, session, time)
-
-hr_data %>% 
-    inner_join(markers_hrd, 
-               by = c("id", "session", "time")) %>% 
+participants %>% 
+    left_join(hrd_data, by = "id") %>% 
     mutate(id = as_factor(id), 
            session = as_factor(session)) %>% 
     group_by(id, session) %>% 
@@ -526,9 +541,16 @@ hr_data %>%
 
 ```
 
-## Hypothesis testing
-```{r}
-# Prepare data for visualization
+```{r hrd momentary data preparation}
+# Nudge data points to the closest half second. This decreases marker accuracy somewhat (from perfect accuracy, they become quarter-of-a-second accurate, which should be enough if we consider that HRD is calculated in a 3 second window)
+
+markers_hrd <- 
+    markers %>% 
+    select(id, session, block, stimulus, time, picture) %>% 
+    mutate(time = plyr::round_any(time,.5),
+           block = if_else(session == "recall", NA_integer_, block)) %>% 
+    arrange(id, session, time)
+
 hr_6s <-
     hr_data %>% 
     # Join markers to the heart rate data
@@ -536,8 +558,8 @@ hr_6s <-
               by = c("id", "session", "time")) %>% 
     group_by(session, id) %>% 
     # Fill the missing data (last value carry forward)
-    fill(block, stimulus, order, valence, arousal, familiarity, picture) %>%
-    select(-order, -valence, -arousal, -familiarity) %>% 
+    fill(block, stimulus, picture) %>%
+    # select(-order, -valence, -arousal, -familiarity) %>% 
     group_by(id, session, stimulus, block) %>% 
     # Keep only the 6 seconds after stimuli presentation
     slice(0:12) %>% 
@@ -551,7 +573,7 @@ hr_6s <-
     arrange(id, session, block, stimulus, rel_time)
 ```
 
-
+## Exploring HR reaction after stimuli presentation
 ```{r}
 # Change in HR after stimuli presentation (all participants/sessions)
 hr_6s %>% 
@@ -614,6 +636,7 @@ hr_6s %>%
 ## Calculate Hear rate deceleration
 The minimum of heart rate after stimuli presentation in a 3 second frame.
 ```{r}
+# This block should be moved to a different script
 hrd <-
     hr_data %>% 
     # Join markers to the heart rate data
@@ -621,8 +644,7 @@ hrd <-
               by = c("id", "session", "time")) %>% 
     group_by(session, id) %>% 
     # Fill the missing data (last value carry forward)
-    fill(block, stimulus, order, valence, arousal, familiarity, picture) %>%
-    select(-order, -valence, -arousal, -familiarity) %>% 
+    fill(block, stimulus, picture) %>%
     group_by(id, session, block, stimulus) %>% 
     # Keep only the 6 seconds after stimuli presentation
     slice(0:6) %>% 
@@ -637,10 +659,7 @@ hrd <-
     right_join(participants, by = "id") %>% 
     drop_na(session, block) %>% 
     group_by(id, session, block, stimulus, picture, group, gender, pic_set) %>% 
-    summarise(hrd = min(hr_change, 
-                        na.rm = TRUE),
-              hrd_std = min(hr_change_std, 
-                            na.rm = TRUE)) %>% 
+    summarise(hrd = min(hr_change, na.rm = TRUE)) %>% 
     ungroup() %>% 
     mutate(novelty = case_when(
         session == "recall" & pic_set == "A" & stimulus %in% set_a ~ "Old",
@@ -662,7 +681,7 @@ hrd %>%
 
 ```{r}
 plot_emot_hrd <-
-    hrd %>%
+    all_data %>%
     filter(session == "emot") %>% 
     mutate(session = case_when(session == "emot" ~ "Emotion induction",
                                session == "recall" ~ "Recall")) %>% 
@@ -683,7 +702,7 @@ plot_emot_hrd <-
         NULL
 
 plot_recall_hrd <-
-    hrd %>%
+    all_data %>%
     filter(session == "recall") %>% 
     mutate(session = case_when(session == "emot" ~ "Emotion induction",
                                session == "recall" ~ "Recall")) %>% 
@@ -708,22 +727,19 @@ plot_emot_hrd +
     plot_layout(widths = c(3,2))
 ```
 
-
-```{r}
-# Create a df where data is aggregated for participants by session, block, group, etc.
-hrd_sum <-
-    hrd %>% 
-    group_by(id, session, block, group, picture, novelty) %>% 
-    summarise(hrd = mean(hrd_std, na.rm = TRUE)) %>% 
-    ungroup()
-
+## Emotion habituation model (HRD)
+```{r hrd emotion habituation}
 # Using Zuur method to select random structure
-# Simple linear regression to justify lmer
-hrd_lm <- lm(hrd ~ group * block * picture, data = hrd_sum)
+# Make the recall the 4th block
+hrd_emot <- 
+    mutate(df_sum, block = if_else(session == "recall", 4L, block))
+
+# Linear regression
+hrd_lm <- lm(hrd ~ group * block * picture, data = df_sum)
 # Random intercept
-hrd_i <- lmer(hrd ~ group * block * picture + (1 | id) , data = hrd_sum)
+hrd_i <- lmer(hrd ~ group * block * picture + (1 | id) , data = df_sum)
 # Random intercept and splope
-hrd_is <- lmer(hrd ~ group * block * picture + (picture * block | id), data = hrd_sum)
+hrd_is <- lmer(hrd ~ group * block * picture + (picture * block | id), data = df_sum)
 
 #anova(hrd_i, hrd_lm)
 #anova(hrd_i, hrd_is)
@@ -765,8 +781,19 @@ hrd_best <- hrd_1_2
 summary(hrd_best)
 ```
 
+## Sleep habituation model (HRD)
+```{r hrd sleep habituation}
+sleep_plot_df %>% 
+    ggplot() +
+    aes(x = sleep, y = hrd_mean, ymin = hrd_mean - hrd_se, ymax = hrd_mean + hrd_se, group = picture) +
+    geom_point() +
+    geom_line(aes(linetype = picture), size = 1.2) +
+    geom_errorbar(width = .2) +
+    facet_grid(group ~ .)
 
-
+lmer(hrd ~ group * picture * sleep + (1 | id), data = sleep_df) %>% 
+    summary()
+```
 
 
 
