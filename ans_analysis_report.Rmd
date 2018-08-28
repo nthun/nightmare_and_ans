@@ -43,7 +43,7 @@ participants <- read_csv("analysis_data/participants.csv")
 # Marker data
 markers <- 
     read_csv("analysis_data/markers.csv") %>% 
-    # Remove test pictures
+    # Remove flanker pictures
     filter((session == "emot" & order >= 4 & order <= 63) |
             session == "recall" & order >= 4 & order <= 43) %>% 
     # Set factor levels for picture
@@ -52,7 +52,7 @@ markers <-
 markers_wo_time <- select(markers, -time)
 
 # Physiological data
-hr_data <- read_csv("all_data/hr/hr_linear.csv") # This "raw" HR data
+hr_data <- read_csv("all_data/hr/hr_linear.csv") # This is "raw" HR data
 scr_data <- read_csv("analysis_data/scr_data.csv")
 hrd_data <- read_csv("analysis_data/hrd_data.csv")
 
@@ -84,7 +84,7 @@ all_data <-
     left_join(hrd_data, by = c("id", "session", "block", "stimulus")) %>% 
     left_join(markers_wo_time, by = c("id", "session", "stimulus", "block")) %>% 
     # Remove outliers larger that 3.5 sds
-    # filter(abs(scr_std) < 3.5 & abs(hrd_std) < 3.5) %>% 
+    filter(abs(scr_std) < 3.5 & abs(hrd_std) < 3.5) %>%
     # Add whether a picture in the recall session is New or Old, a block is Pre-sleep or Post-sleep, and set factor levels
     mutate(novelty = case_when(
                session == "recall" & pic_set == "A" & stimulus %in% set_a ~ "Old",
@@ -107,7 +107,7 @@ df_sum <-
     all_data %>% 
     group_by(id, session, block, group, picture, novelty, sleep) %>% 
     summarise(scr = mean(scr_sqrt, na.rm = TRUE),
-              hrd = mean(hrd_sqrt, na.rm = TRUE),
+              hrd = mean(hrd, na.rm = TRUE),
               arousal = mean(arousal, na.rm = TRUE),
               valence = mean(valence, na.rm = TRUE)) %>% 
     ungroup()
@@ -125,8 +125,8 @@ sleep_plot_df <-
     group_by(group, picture, sleep) %>% 
     summarise(scr_mean = mean(scr_sqrt, na.rm = TRUE),
               scr_se = sd(scr_sqrt, na.rm = TRUE)/sqrt(n()),
-              hrd_mean = mean(hrd_sqrt, na.rm = TRUE),
-              hrd_se = sd(hrd_sqrt, na.rm = TRUE)/sqrt(n()),
+              hrd_mean = mean(hrd, na.rm = TRUE),
+              hrd_se = sd(hrd, na.rm = TRUE)/sqrt(n()),
               arousal_mean = mean(arousal, na.rm = TRUE),
               arousal_se = sd(arousal, na.rm = TRUE)/sqrt(n()),
               valence_mean = mean(valence, na.rm = TRUE),
@@ -335,6 +335,7 @@ participants %>%
            session = as_factor(session)) %>% 
     group_by(id, session) %>% 
     count() %>% 
+    mutate(n = if_else(n == 1, 0L, n)) %>% 
     ggplot() +
     aes(x = fct_rev(id), 
         y = n, 
@@ -344,7 +345,7 @@ participants %>%
     geom_text() +
     coord_flip() +
     labs(title = "Successfully matched markers for each session",
-         y = "Number of matched markers (1 means no match)", 
+         y = "Number of matched markers", 
          x = "Participant id")
 ```
 
@@ -527,6 +528,7 @@ participants %>%
            session = as_factor(session)) %>% 
     group_by(id, session) %>% 
     count() %>% 
+    mutate(n = if_else(n == 1, 0L, n)) %>% 
     ggplot() +
     aes(x = fct_rev(id), 
         y = n, 
@@ -731,8 +733,8 @@ plot_emot_hrd +
 ```{r hrd emotion habituation}
 # Using Zuur method to select random structure
 # Make the recall the 4th block
-hrd_emot <- 
-    mutate(df_sum, block = if_else(session == "recall", 4L, block))
+# hrd_emot <- 
+#     mutate(df_sum, block = if_else(session == "recall", 4L, block))
 
 # Linear regression
 hrd_lm <- lm(hrd ~ group * block * picture, data = df_sum)
@@ -789,7 +791,7 @@ sleep_plot_df %>%
     geom_point() +
     geom_line(aes(linetype = picture), size = 1.2) +
     geom_errorbar(width = .2) +
-    facet_grid(group ~ .)
+    facet_grid(. ~ group)
 
 lmer(hrd ~ group * picture * sleep + (1 | id), data = sleep_df) %>% 
     summary()
