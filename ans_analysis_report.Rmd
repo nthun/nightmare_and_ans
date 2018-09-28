@@ -798,5 +798,161 @@ lmer(hrd ~ group * picture * sleep + (1 | id), data = sleep_df) %>%
 ```
 
 
+# Cortisol
+## Data processing
+Salivary cortisol was collected at bedtime, and in the next morning at awakening,  15 minutes and 30 minutes after awakening on both days.
+...details of cortisol measurement...
+
+- Missing cortisol data (n = 3) was imputed using linear interpolation.
+- AUCg and AUCi were calculated for each participant and each night, using the bedtime, awakening, awakening +15, and awakening +30 data points.
+
+```{r}
+cort_df_raw <-read_csv("analysis_data/cortisol_data.csv")
+
+cort_df <- 
+    participants %>%
+    left_join(cort_df_raw, by = "id") %>%
+    group_by(id, day) %>%
+    # If the first or last cortisol value is missing, we have to drop it
+    drop_na(cortisol) %>% 
+    # Interpolating cortisol data
+    mutate(cortisol_full = approx(x = cort_time,
+                                  y = cortisol,
+                                  xout = cort_time)$y) %>%
+    ungroup() %>% 
+    mutate(event =  fct_inorder(event))
+
+cort_auc <-
+    cort_df %>% 
+    group_by(id, group, day) %>% 
+    nest() %>% 
+    mutate(auc = map(data, ~calculate_auc(.x, 
+                                 time = "cort_time",
+                                 measurement = "cortisol_full",
+                                 type = "both"))) %>% 
+    unnest(auc) %>% 
+    select(-data)
+
+```
+
+## Exploratory data analysis on data quality
+### Number of markers/participants in the data analysis
+
+```{r}
+participants %>% 
+    left_join(cort_df_raw, by = "id") %>% 
+    mutate(id = as_factor(id), 
+           day = as_factor(day)) %>% 
+    group_by(id, day) %>% 
+    count(cort_missing = is.na(cortisol)) %>% 
+    filter(!cort_missing) %>% 
+    mutate(n = if_else(n == 1, 0L, n)) %>% 
+    ggplot() +
+        aes(x = fct_rev(id), 
+            y = n, 
+            fill = day, 
+            label = n) +
+        geom_col(position = "dodge") +
+        geom_text() +
+        coord_flip() +
+        labs(title = "Successfully matched cortisol samples at each day",
+             y = "Number of matched cortisol samples",
+             x = "Participant id")
+```
+
+## Cortisol change over time
+
+```{r}
+cort_df %>% 
+    group_by(group, day, cort_time) %>% 
+    summarise(cortisol_mean = mean(cortisol, na.rm = TRUE),
+              cortisol_se = sd(cortisol, na.rm = TRUE)/sqrt(n()),
+              minute_mean = mean(cort_minute, na.rm = TRUE),
+              minute_se = sd(cort_minute, na.rm = TRUE)/sqrt(n())) %>% 
+    ggplot() +
+    aes(x = minute_mean, 
+        y = cortisol_mean, 
+        ymin = cortisol_mean - cortisol_se,
+        ymax = cortisol_mean + cortisol_se,
+        xmin = minute_mean - minute_se,
+        xmax = minute_mean + minute_se,
+        group = group) +
+    geom_line(aes(color = group), size = 1.2) +
+    geom_point(aes(color = group), size = 2) +
+    geom_linerange() +
+    geom_errorbarh(height = 0) +
+    facet_wrap(~day) +
+    ggtitle("Cortisol change by day, time, and group with respect to absolute time")
+```
+
+```{r}
+cort_df %>% 
+    group_by(group, day, cort_time, event) %>% 
+    summarise(cortisol_mean = mean(cortisol, na.rm = TRUE),
+              cortisol_se = sd(cortisol, na.rm = TRUE)/sqrt(n())) %>% 
+    ggplot() +
+    aes(x = event, 
+        y = cortisol_mean, 
+        ymin = cortisol_mean - cortisol_se,
+        ymax = cortisol_mean + cortisol_se,
+        group = group) +
+    geom_line(aes(color = group), size = 1.2) +
+    geom_point(aes(color = group), size = 2) +
+    geom_linerange() +
+    facet_wrap(~day) +
+    ggtitle("Cortisol change by day, time, and group with respect to time points")
+```
+
+## Difference in AUC
+AUC was calculated with respect to ground (AUCg) and with respect to baseline (AUCi). Linear Mixed-effects models were fitted on the data, with the respective AUC metric as outcome, and group membership (control/nightmare) and day (first/second), and their interaction as predictors. 
+
+### AUCg
+There was no significant effect of the predictors on AUCg
+
+```{r}
+aucg_model <- lmer(auc_g ~ group * day + (1|id), data = cort_auc)
+summary(aucg_model)
+```
+
+### AUCi
+We found a significant interaction between group and day, and a main effect of day.
+Closer inspection of the values suggest that the nightmare group showed a smaller decrease in AUCi from the first to the second day, compared to the control group.
+
+that the nightmare group showed a lower AUCi decrease 
+
+```{r}
+auci_model <- lmer(auc_i ~ group * day + (1|id), data = cort_auc)
+summary(auci_model)
+```
+
+```{r}
+cort_auc %>% 
+    group_by(group, day) %>% 
+    summarise(AUCi_mean = mean(auc_i, na.rm = TRUE),
+              AUCi_se = sd(auc_i, na.rm = TRUE)/sqrt(n()),
+              AUCg_mean = mean(auc_g, na.rm = TRUE),
+              AUCg_se = sd(auc_g, na.rm = TRUE)/sqrt(n())
+            ) %>% 
+    ungroup() %>% 
+    gather(metric, value, -group, -day) %>% 
+    separate(metric, c("type", "stat"), sep = "_") %>% 
+    spread(stat, value) %>% 
+    ggplot() +
+        aes(x = day, 
+            y = mean, 
+            ymin = mean - se,
+            ymax = mean + se,
+            group = group) +
+        geom_line(aes(color = group), size = 1.8) +
+        geom_point(aes(color = group), size = 3) +
+        geom_linerange() +
+        facet_wrap(~type) +
+        labs(title = "Changes in AUCg and AUCi on two nights",
+             y = "Mean AUC (+-SE)",
+             x = NULL)
+```
+
+
+
 
 
