@@ -820,7 +820,7 @@ cort_df <-
                                   y = cortisol,
                                   xout = cort_time)$y) %>%
     ungroup() %>% 
-    mutate(event =  fct_inorder(event))
+    mutate(event =  factor(event, levels = c("Night", "Awakening","Awakening +15 min","Awakening +30 min")))
 
 cort_auc <-
     cort_df %>% 
@@ -885,7 +885,7 @@ cort_df %>%
     ggtitle("Cortisol change by day, time, and group with respect to absolute time")
 ```
 
-```{r}
+```{r fig.width = 9}
 cort_df %>% 
     group_by(group, day, cort_time, event) %>% 
     summarise(cortisol_mean = mean(cortisol, na.rm = TRUE),
@@ -897,33 +897,15 @@ cort_df %>%
         ymax = cortisol_mean + cortisol_se,
         group = group) +
     geom_line(aes(color = group), size = 1.2) +
+    geom_linerange(alpha = .5) +
     geom_point(aes(color = group), size = 2) +
-    geom_linerange() +
     facet_wrap(~day) +
     ggtitle("Cortisol change by day, time, and group with respect to time points")
 ```
 
 ## Difference in AUC
 AUC was calculated with respect to ground (AUCg) and with respect to baseline (AUCi). Linear Mixed-effects models were fitted on the data, with the respective AUC metric as outcome, and group membership (control/nightmare) and day (first/second), and their interaction as predictors. 
-
-### AUCg
-There was no significant effect of the predictors on AUCg
-
-```{r}
-aucg_model <- lmer(auc_g ~ group * day + (1|id), data = cort_auc)
-summary(aucg_model)
-```
-
-### AUCi
-We found a significant interaction between group and day, and a main effect of day.
-Closer inspection of the values suggest that the nightmare group showed a smaller decrease in AUCi from the first to the second day, compared to the control group.
-
-that the nightmare group showed a lower AUCi decrease 
-
-```{r}
-auci_model <- lmer(auc_i ~ group * day + (1|id), data = cort_auc)
-summary(auci_model)
-```
+Results were similar if we included the night sample, therefore hereby we only present AUC differences that include the night sample.
 
 ```{r}
 cort_auc %>% 
@@ -951,6 +933,57 @@ cort_auc %>%
              y = "Mean AUC (+-SE)",
              x = NULL)
 ```
+
+### AUCg
+The day was a significant predictor of AUCg, wheras the second night was associated with slightly higher AUCg than the first. There were no differences between the gropus.
+
+```{r}
+aucg_lm <- lm(auc_g ~ group * day, data = cort_auc)
+aucg_i <- lmer(auc_g ~ group * day + (1|id), data = cort_auc)
+
+# anova(aucg_i, aucg_lm)
+
+aucg_best <- aucg_i
+aucg_2_1 <- update(aucg_best, . ~ . - group : day) # Drop
+
+# anova(aucg_best, aucg_2_1)
+aucg_best <- aucg_2_1
+
+aucg_1_1 <- update(aucg_best, . ~ . - group) # Drop
+aucg_1_2 <- update(aucg_best, . ~ . - day) # Keep
+
+# anova(aucg_best, aucg_1_1)
+# anova(aucg_best, aucg_1_2)
+
+aucg_best <- aucg_1_1
+
+summary(aucg_best)
+```
+
+### AUCi
+There was no effect of the predictors on AUCi.
+
+```{r}
+auci_lm <- lm(auc_i ~ group * day, data = cort_auc)
+auci_i <- lmer(auc_i ~ group * day + (1|id), data = cort_auc)
+# anova(auci_i, auci_lm)
+
+auci_best <- auci_i
+auci_2_1 <- update(auci_best, . ~ . - group : day) # Drop
+
+# anova(auci_best, auci_2_1)
+auci_best <- auci_2_1
+
+auci_1_1 <- update(auci_best, . ~ . - group) # Drop
+auci_1_2 <- update(auci_best, . ~ . - day) # Drop
+
+# anova(auci_best, auci_1_1)
+# anova(auci_best, auci_1_2)
+
+summary(auci_i)
+```
+
+
 
 
 
