@@ -800,11 +800,10 @@ lmer(hrd ~ group * picture * sleep + (1 | id), data = sleep_df) %>%
 
 # Cortisol
 ## Data processing
-Salivary cortisol was collected at bedtime, and in the next morning at awakening,  15 minutes and 30 minutes after awakening on both days.
-...details of cortisol measurement...
+Salivary cortisol was collected at bedtime, and in the next morning at awakening,  15 minutes and 30 minutes after awakening on both days.  
+Details of cortisol measurement TBA
 
-- Missing cortisol data (n = 3) was imputed using linear interpolation.
-- AUCg and AUCi were calculated for each participant and each night, using the bedtime, awakening, awakening +15, and awakening +30 data points.
+Missing cortisol data (n = 3) was imputed using linear interpolation.
 
 ```{r}
 cort_df_raw <-read_csv("analysis_data/cortisol_data.csv")
@@ -903,8 +902,8 @@ cort_df %>%
     ggtitle("Cortisol change by day, time, and group with respect to time points")
 ```
 
-## Difference in AUC
-AUC was calculated with respect to ground (AUCg) and with respect to baseline (AUCi). Linear Mixed-effects models were fitted on the data, with the respective AUC metric as outcome, and group membership (control/nightmare) and day (first/second), and their interaction as predictors. 
+## Area Under the Curve (AUC)
+AUC for each participant and each night was calculated with respect to ground (AUCg) and with respect to baseline (AUCi). Linear Mixed-effects models were fitted on the data, with the respective AUC metric as outcome, and group membership (control/nightmare) and day (first/second), and their interaction as predictors. 
 Results were similar if we included the night sample, therefore hereby we only present AUC differences that include the night sample.
 
 ```{r}
@@ -926,8 +925,8 @@ cort_auc %>%
             ymax = mean + se,
             group = group) +
         geom_line(aes(color = group), size = 1.8) +
-        geom_point(aes(color = group), size = 3) +
         geom_linerange() +
+        geom_point(aes(color = group), size = 3) +
         facet_wrap(~type) +
         labs(title = "Changes in AUCg and AUCi on two nights",
              y = "Mean AUC (+-SE)",
@@ -935,7 +934,7 @@ cort_auc %>%
 ```
 
 ### AUCg
-The day was a significant predictor of AUCg, wheras the second night was associated with slightly higher AUCg than the first. There were no differences between the gropus.
+The day was a significant predictor of AUCg, whereas the second night was associated with slightly higher AUCg than the first. There were no differences between the groups.
 
 ```{r}
 aucg_lm <- lm(auc_g ~ group * day, data = cort_auc)
